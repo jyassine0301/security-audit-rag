@@ -158,6 +158,42 @@ Layout tatsächlich zusammengehören — auf Seite 12 zum Beispiel **4 Blöcke**
 undifferenzierten Textwand. Das ist die inhaltlich sauberste Zerlegung, weil sie nicht rät,
 sondern die Struktur des Dokuments benutzt.
 
+## Gegenprobe 2: Warum erst kleben und dann schneiden?
+
+Beim Bauen kam die Frage auf, warum nicht jede Seite einzeln bereinigt und gleich zerteilt
+wird — das spart den Umweg über den zusammengeklebten Text. Gemessen:
+
+| | **A — kleben, dann schneiden** | **B — seitenweise schneiden** |
+|---|---|---|
+| Stücke | **138** | 162 |
+| davon unter 200 Zeichen | **0** | **12** |
+| kürzestes Stück | **519 Zeichen** | **10 Zeichen** |
+| Durchschnitt | 797 | 679 |
+
+**Seitenweises Schneiden erzeugt an jeder Seitengrenze einen Rest.** Hat eine Seite 2.100
+Zeichen, ergibt das zwei volle Stücke und einen Rest von 500 — bei 54 Seiten fallen 54 solcher
+Reste an, zwölf davon unter 200 Zeichen, der kürzeste mit 10 Zeichen.
+
+Solche Fragmente sind schädlich, nicht bloß nutzlos: Sie bekommen einen Vektor, belegen Platz
+im Index und können eine Suche sogar gewinnen, weil ein sehr kurzer Text zufällig nah an einer
+kurzen Frage liegen kann. Dazu 17 % mehr Embedding-Aufrufe für ein schlechteres Ergebnis.
+
+**Die allgemeine Regel:** *Erst zusammenführen, dann bereinigen, dann aufteilen.* Bereinigen
+und Aufteilen wirken auf den ganzen Text; wer vorher zerlegt, arbeitet isoliert in jedem Stück,
+und alles, was über eine Grenze läuft — Silbentrennung, Sätze, Tabellen — bleibt kaputt.
+
+### Was diese Reihenfolge kostet
+
+**Die Seitenzahl geht verloren.** Nach dem Zusammenkleben lässt sich nicht mehr sagen, aus
+welcher Seite ein Stück stammt. Für die **Zitatpflicht** (Groundedness) wird das gebraucht:
+Eine Antwort aus einem Sicherheitsdokument ohne überprüfbare Fundstelle ist wertlos.
+
+**Lösung ist nicht Variante B**, sondern eine dritte: beim Zusammenkleben mitschreiben, an
+welcher Zeichenposition jede Seite beginnt. Damit lässt sich zu jeder Textstelle die Seitenzahl
+zurückrechnen. Rund fünf Zeilen — als nächster Schritt vorgemerkt, sobald die Suche läuft.
+
+---
+
 ## Entscheidung
 
 **Weg A zuerst** — Zerteilen nach Zeichenzahl, ~800 Zeichen, ohne Überlappung.
@@ -291,6 +327,104 @@ Anführungszeichen, und niemand kann die Zeile später lesen.
 
 ---
 
+# Befund 3 — `nomic-embed-text` braucht Präfixe
+
+## Symptom
+
+Erster Test der Ähnlichkeitsrechnung mit drei Vergleichstexten gegen die Frage
+*„Wie schütze ich sensible Daten?"* — **die Rangfolge war falsch:**
+
+```
+0.629  PASST         "Die Schutzbedarfsfeststellung ermittelt, welche Werte ..."
+0.635  passt nicht   "Wie beantrage ich Urlaub fuer naechste Woche?"     <- hoeher!
+0.931  Wortsalat     "Daten Daten Daten schuetze schuetze sensible"
+```
+
+Eine Suche nach Datenschutz hätte den Urlaubsantrag zurückgegeben.
+
+## Ursache
+
+`nomic-embed-text` wurde mit **Aufgaben-Präfixen** trainiert. Das Modell behandelt Fragen und
+Dokumente unterschiedlich und erwartet, dass ihm gesagt wird, was es gerade vor sich hat.
+Ohne Präfix fehlt diese Information, und die Vektoren werden von der **Satzform** dominiert —
+beide Testfragen beginnen mit „Wie … ich …?".
+
+## Messung mit Präfixen
+
+```
+                              ohne      mit
+PASST         Schutzbedarf    0.629    0.598     <- jetzt oben
+passt nicht   Urlaub          0.635    0.581
+Wortsalat                     0.931    0.845
+```
+
+**Die Rangfolge zwischen passendem und unpassendem Text dreht sich um.**
+
+## Entscheidung
+
+Vor jedem Text wird ein Präfix gesetzt:
+
+| Was | Präfix |
+|---|---|
+| Textstücke aus dem Korpus | `"search_document: "` |
+| Die Suchanfrage | `"search_query: "` |
+
+Nicht in der `embed`-Funktion selbst, sondern beim Aufruf — die Präfixe unterscheiden sich je
+nach Verwendung, und die Funktion soll modellneutral bleiben.
+
+## Was auch mit Präfixen nicht funktioniert
+
+**Wortwiederholung schlägt weiterhin durch.** Der reine Wortsalat aus den Frage-Wörtern erhält
+0.845 und gewinnt gegen den inhaltlich passenden Text. Embeddings messen Bedeutung **und**
+Wortüberlappung, nicht Bedeutung allein. In echten Dokumenten tritt dieser Extremfall nicht
+auf, die Grenze ist aber real.
+
+**Der Abstand zwischen richtig (0.598) und falsch (0.581) beträgt nur 0.017.** Das ist der
+Grund, warum ernsthafte Retrieval-Systeme ein **Reranking** nachschalten: ein zweites Modell,
+das die besten Kandidaten der Vektorsuche nochmals genauer sortiert. Vorgemerkt für P2/P4,
+sobald die Grundsuche misst.
+
+**Verneinung wird kaum erkannt:** *„Der Schutz ist zwingend erforderlich"* und *„… ist nicht
+erforderlich"* erreichen 0.934 Ähnlichkeit — gegenteilige Aussagen, fast identischer Vektor.
+Für ein Sicherheitsdokument mit vielen Muss-/Kann-Bestimmungen ist das eine ernstzunehmende
+Einschränkung und gehört ins README.
+
+---
+
+# Befund 4 — Einbetten dauert 6 Minuten pro Durchlauf
+
+## Messung
+
+```
+138 Stuecke:      349,8 s   =  5 min 50 s
+pro Stueck:       2,5 s
+erster Aufruf:    2,8 s     (Modell wird geladen)
+```
+
+Gemessen auf der Entwicklungsmaschine (7,8 GB RAM, keine GPU) mit `nomic-embed-text` über
+Ollama, 800-Zeichen-Stücke.
+
+## Folge
+
+Bei jedem Programmstart werden dieselben Vektoren neu berechnet, obwohl sich weder Korpus noch
+Modell geändert haben. Das macht Entwickeln unbrauchbar — jeder Test kostet sechs Minuten.
+
+## Entscheidung
+
+1. **Während der Entwicklung** mit `stuecke[:20]` arbeiten (~50 s).
+2. **Danach** die Vektoren einmal berechnen und in einer Datei ablegen; beim Start laden statt
+   neu rechnen.
+
+## Einordnung
+
+Genau diese Aufgabe übernimmt eine **Vektordatenbank**: Vektoren dauerhaft speichern und
+schnell durchsuchen. Der Bedarf ist hier aus einer eigenen Messung entstanden, nicht aus einer
+Tutorial-Empfehlung — 2,5 Sekunden pro Stück auf CPU sind der konkrete Grund.
+
+Mit GPU läge die Zeit im Millisekundenbereich; auf dem Hetzner-Server (Track G) später zu prüfen.
+
+---
+
 # Offene Punkte
 
 - [ ] Stückgröße messen statt schätzen — sobald `Recall@k` aus der Eval-Suite (P4) vorliegt,
@@ -298,6 +432,9 @@ Anführungszeichen, und niemand kann die Zeile später lesen.
 - [ ] Weiche Trennstriche entfernen und die Stückzahl erneut messen
 - [ ] Prüfen, ob die verstümmelten Stellen auf bestimmten Seiten geballt auftreten (dann wäre
       ein einzelner Font die Ursache und eine gezielte Behandlung doch lohnend)
+- [ ] **Seitenzahl je Stück zurückgewinnen** — beim Zusammenkleben die Startposition jeder
+      Seite mitschreiben, damit zu jedem Stück eine Fundstelle genannt werden kann
+      (Voraussetzung für die Zitatpflicht)
 - [ ] Weitere Korpus-Dokumente (BSI/ANSSI Zero Trust, NIST AI 600-1) mit denselben Messungen
       prüfen — bevor sie in den Index kommen
 
