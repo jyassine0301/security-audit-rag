@@ -24,12 +24,17 @@ for page in reader.pages:
 
 
 # --- 2b. Reparieren - VOR dem Zerteilen ------------------------------------
-# 359x Silbentrennung \xad zerreisst Woerter ("teil\xad\nweise"), 24x "ffr"
-# statt "für" (Font-Fehler im PDF). Embeddings vergleichen Zeichenfolgen -
-# kaputter Text = kaputte Treffer.
+# 359x Silbentrennung \xad zerreisst Woerter ("teil\xad\nweise").
 # Reihenfolge: erst "\xad\n", sonst bleibt "teil\nweise" stehen.
 text = text.replace("\xad\n", "").replace("\xad", "")
-text = text.replace("ffr", "für").replace("Ffr", "Für")
+
+# Font-Fehler: das PDF schreibt sporadisch "ff" statt "fü" - 31 Vorkommen
+# (BEFUNDE.md 6). Embeddings vergleichen Zeichenfolgen, kaputter Text =
+# kaputte Treffer. "Verffgbarkeit" macht einen BSI-Grundwert unauffindbar.
+# NUR diese vier Muster: "ffs"/"fft" sind echt (Zugriffs, betrifft, beschafft).
+for kaputt, heil in [("ffr", "für"), ("Ffr", "Für"),
+                     ("ffh", "füh"), ("ffg", "füg"), ("ffl", "fül")]:
+    text = text.replace(kaputt, heil)
 
 
 # --- 2c. Zerteilen in 800-Zeichen-Stuecke ----------------------------------

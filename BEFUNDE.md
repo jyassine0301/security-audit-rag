@@ -507,13 +507,310 @@ folgen kann.** Wird das übersehen, wirkt das System vorsichtig und ist in Wahrh
 
 ---
 
+# Befund 6 — Die Encoding-Reparatur aus Befund 2 war unvollständig
+
+## Symptom
+
+Beim Gegentest zur Frage *„Was ist ein Schutzbedarf?"* stand mitten im zweitbesten Treffer:
+
+```
+Auch diejenigen IT-Grundschutz-Anforderungen, die im IT-Grundschutz-Kompendium
+als Anforderungen bei erhöhtem Schutzbedarf aufgeffhrt sind ...
+                                              ^^^^^^^^^
+```
+
+`aufgeffhrt` statt `aufgeführt`. Befund 2 hatte nur das Muster `ffr` → `für` behandelt und
+war damit **nicht vollständig** — die Reparatur greift zu kurz, nicht falsch.
+
+## Messung
+
+Alle Vorkommen von `ff` gefolgt von einem Konsonanten, im Rohtext nach der
+Trennstrich-Reparatur:
+
+| Muster | Fälle | Beispiele | Bewertung |
+|---|---|---|---|
+| `ffr` → `für` | 19 | *(in Befund 2 bereits behandelt)* | kaputt |
+| `ffh` → `füh` | 6 | `durchgeffhrt`, `ffhren`, `aufgeffhrt`, `weiterffhrende`, `Durchffhrung` | kaputt |
+| `ffg` → `füg` | 5 | `Verffgung`, `Verffgbarkeit`, `verffgen` | kaputt |
+| `ffl` → `fül` | 1 | `Erffllung` | kaputt |
+| `ffs` | 3 | `Zugriffsberechtigungen`, `Angriffspunkte` | **korrekt** |
+| `fft` | 2 | `betrifft`, `beschafft` | **korrekt** |
+
+**31 kaputte Vorkommen, 5 korrekte.** Eine pauschale `ff`-Regel hätte die fünf korrekten
+Wörter zerstört — deshalb nur die vier belegten Muster.
+
+## Der Fehler tritt sporadisch auf
+
+Das ist die eigentliche Überraschung. Dasselbe Wort steht im Dokument mal heil, mal kaputt:
+
+| Wort | korrekt im Rohtext | beschädigt |
+|---|---|---|
+| Verfügbarkeit | 32× | 2× |
+| durchgeführt | 15× | 2× |
+
+Es ist also **kein durchgängiger Font-Fehler**, sondern hängt an einzelnen Textstellen —
+vermutlich an bestimmten Absätzen, die mit einer anderen Font-Einbettung gesetzt wurden.
+Das erklärt auch, warum Befund 2 den Schaden mit 0,02 % als gering einstufte: gemessen an
+allen Zeichen stimmt das, gemessen an *einzelnen Suchbegriffen* nicht.
+
+## Warum das für das Retrieval teuer ist
+
+`Verffgbarkeit` ist der teuerste der 31 Fälle. **Verfügbarkeit ist einer der drei
+BSI-Grundwerte** (neben Vertraulichkeit und Integrität) — ein zentraler Suchbegriff im
+gesamten Themenfeld. Zwei Textstellen dazu waren für jede Anfrage unauffindbar, weil ein
+Embedding Zeichenfolgen vergleicht: `Verffgbarkeit` und `Verfügbarkeit` sind für das Modell
+zwei verschiedene Wörter.
+
+## Gegenprobe: Zerstört die Reparatur etwas?
+
+Zwei Wörter standen zunächst unter Verdacht, weil sie in der Messung ohne Umlaut auftauchten:
+`ffentlich` und `ckgegriffen`. Beide im Kontext geprüft:
+
+```
+'banwendung öffentlich bekann'      -> korrekt, "öffentlich"
+'kumente zurückgegriffen we'        -> korrekt, "zurückgegriffen"
+```
+
+**Falschalarm** — mein Suchmuster `[A-Za-z]*ff[A-Za-z]*` schneidet an Umlauten ab, weil `ö`
+und `ü` nicht in `A-Za-z` enthalten sind. Der Fehler lag im Messwerkzeug, nicht im Text.
+
+Nach der Reparatur:
+
+| Prüfung | Ergebnis |
+|---|---|
+| Übrige `ff`-Wörter | nur noch korrekte (`Begriffe`, `getroffen`, `Zugriff`, …) |
+| `Verfügbarkeit` | 32 → **34** |
+| `durchgeführt` | 15 → **17** |
+| `Zugriffsberechtigungen`, `betrifft` | unverändert — nicht angefasst |
+| Zeichenzahl | 110 119 → 110 119 (**Differenz 0**) |
+| Stückzahl | 138 → 138 |
+
+Die Zeichenzahl bleibt gleich, weil jedes Muster genau drei Zeichen gegen drei Zeichen
+tauscht (`ffr` → `für`). Deshalb verschieben sich die Stückgrenzen nicht und alle früheren
+Messungen bleiben vergleichbar.
+
+## Lösungswege
+
+1. **Vier gezielte Ersetzungen** — belegt, risikolos, drei Zeilen Code. *(gewählt)*
+2. **Rechtschreibprüfung über den Gesamttext** — findet auch unbekannte Muster, bringt aber
+   eine Abhängigkeit und neue Fehlerquellen (Fachbegriffe, Abkürzungen).
+3. **Anderes Extraktionswerkzeug** — in Befund 2 bereits ausgeschlossen: PyMuPDF liefert
+   dieselben beschädigten Zeichen, der Fehler steckt in der PDF-Datei.
+4. **OCR statt Textextraktion** — überdimensioniert für 31 Stellen.
+
+## Entscheidung
+
+Weg 1, als Schleife über eine Musterliste statt als verkettete `replace`-Aufrufe — die Liste
+zeigt auf einen Blick, welche Muster behandelt werden und welche bewusst nicht:
+
+```python
+for kaputt, heil in [("ffr", "für"), ("Ffr", "Für"),
+                     ("ffh", "füh"), ("ffg", "füg"), ("ffl", "fül")]:
+    text = text.replace(kaputt, heil)
+```
+
+## Methodische Lehre
+
+Befund 2 war nicht falsch, sondern **zu eng gefragt**. Gesucht wurde nach `"ffr"`, gefunden
+wurde `"ffr"` — die Frage bestimmte die Antwort. Erst die offene Frage *„welche `ff`-Muster
+gibt es überhaupt?"* zeigte drei weitere.
+
+**Bei Datenqualität nicht nach dem bekannten Fehler suchen, sondern nach der Fehlerklasse.**
+Und den Fund im Kontext gegenprüfen — zwei von sechzehn Verdachtsfällen waren ein Artefakt
+meines eigenen Suchmusters.
+
+---
+
+# Befund 7 — Die Ähnlichkeitswerte trennen relevant und irrelevant nicht
+
+## Symptom
+
+Zwei Fragen an denselben Index, eine passend zum Dokument, eine völlig fremd:
+
+| Frage | Platz 1 | Platz 2 | Platz 3 |
+|---|---|---|---|
+| „Was ist ein Schutzbedarf?" (passend) | **0.686** | 0.684 | 0.660 |
+| „Wie beantrage ich urlaub?" (fremd) | **0.663** | 0.641 | 0.626 |
+
+Die passende Frage gewinnt — aber nur um **0.023**.
+
+## Der entscheidende Vergleich
+
+```
+Platz 3 der PASSENDEN Frage:   0.660
+Platz 1 der FREMDEN Frage:     0.663   <- hoeher
+```
+
+Ein Textstück, das nichts mit dem Thema zu tun hat, erreicht bei einer dokumentfremden Frage
+einen **höheren** Wert als ein Treffer, den die passende Frage auf Platz 3 gebracht hat.
+
+## Ursache
+
+Ein Kosinuswert misst **Ähnlichkeit im Vektorraum**, nicht **Relevanz für die Frage**. Alle
+138 Stücke stammen aus einem einzigen deutschen Fachtext zu einem einzigen Thema — sie
+liegen im Raum ohnehin dicht beieinander. Der Wertebereich, in dem sich überhaupt etwas
+abspielt, ist deshalb schmal: gemessen liegt alles zwischen etwa 0.62 und 0.69.
+
+`nomic-embed-text` ist auf *semantische Nähe* trainiert, nicht darauf zu beurteilen, ob ein
+Absatz eine Frage **beantwortet**. Das ist keine Fehlfunktion, sondern die Aufgabe, für die
+das Modell gebaut wurde.
+
+## Folge: ein fester Schwellenwert funktioniert nicht
+
+Die naheliegende Idee — *„unter 0.65 gar nicht erst antworten"* — scheitert an diesen Zahlen:
+
+| Schwelle | Wirkung |
+|---|---|
+| 0.67 | wirft Platz 2 und 3 der **richtigen** Frage weg |
+| 0.65 | lässt Platz 1 der **falschen** Frage durch |
+| dazwischen | existiert nicht |
+
+Absolute Schwellen sind für dieses Retrieval damit unbrauchbar. Was bleibt, ist der
+**relative** Abstand innerhalb einer Anfrage — der Abstand zwischen Platz 1 und Platz 10
+sagt mehr als der Absolutwert von Platz 1.
+
+## Nachmessung: drei Schreibweisen derselben Frage
+
+Nach der Encoding-Reparatur aus Befund 6 wurde gezielt nach `Verfügbarkeit` gefragt — einem
+der drei BSI-Grundwerte, dessen Textstellen vorher als `Verffgbarkeit` unauffindbar waren.
+Drei Formulierungen, derselbe Index:
+
+| Eingabe | Platz 1 | Platz 2 | Platz 3 | Treffer mit dem Wort im Text |
+|---|---|---|---|---|
+| `Verfügbarkeit` (nur das Wort) | **0.686** | 0.684 | 0.673 | **2 von 3** |
+| `Was bedeutet Verfügbarkeit?` | 0.658 | 0.647 | 0.643 | 1 von 3 |
+| `Was bedeutet Verfuegbarkeit?` (Tippfehler) | 0.665 | 0.656 | 0.651 | 1 von 3 |
+| *(Vergleich)* `Wie beantrage ich urlaub?` | 0.663 | 0.641 | 0.626 | — |
+
+### Erkenntnis 1: Frageworte verwässern den Vektor
+
+Das nackte Wort erreicht **0.686**, derselbe Begriff in einen Satz verpackt nur **0.658** —
+ein Verlust von 0.028, mehr als der gesamte Abstand zur dokumentfremden Urlaubsfrage.
+
+Die Ursache ist dieselbe wie beim Chunking (Befund 1): **ein Vektor ist der Durchschnitt über
+seinen Text.** „Was bedeutet … ?" trägt nichts zum Thema bei, zieht den Durchschnitt aber in
+Richtung Allgemeinsprache. Je mehr inhaltsleere Wörter in der Frage stehen, desto unschärfer
+der Suchvektor.
+
+Auch die Trefferqualität folgt dem: beim nackten Wort enthalten **zwei von drei** Treffern
+`Verfügbarkeit` wörtlich, beim Satz nur einer.
+
+### Erkenntnis 2: Absolutwerte sind zwischen Fragen nicht vergleichbar
+
+Das ist die schärfere Fassung dieses Befundes:
+
+```
+Was bedeutet Verfügbarkeit?   0.658   <- korrekte Fachfrage zum Kernbegriff
+Wie beantrage ich urlaub?     0.663   <- Thema kommt im Dokument nicht vor
+```
+
+**Die dokumentfremde Frage erreicht den höheren Wert.** Nicht weil sie besser passt, sondern
+weil ihr Vektor zufällig günstiger im Raum liegt.
+
+Damit ist präzisiert, was oben allgemein formuliert war: Die Rangfolge **innerhalb** einer
+Anfrage ist brauchbar — der Kosinus sortiert die 138 Stücke sinnvoll. **Zwischen** zwei
+Anfragen sagt der Absolutwert nichts. Jede Frage hat ihr eigenes Niveau.
+
+Genau deshalb funktioniert kein globaler Schwellenwert: Er würde Werte vergleichen, die aus
+verschiedenen Anfragen stammen und nicht auf derselben Skala liegen.
+
+### Erkenntnis 3: Der Tippfehler-Test fällt aus dem Rahmen
+
+`Verfuegbarkeit` statt `Verfügbarkeit` liefert **höhere** Werte (0.665 gegen 0.658) bei
+**schlechteren** Treffern — Platz 1 handelt von elementaren Gefährdungen und enthält den
+Begriff überhaupt nicht.
+
+Ein Embedding scheitert an der Umlautschreibung nicht (die Rangfolge bleibt grob brauchbar),
+aber der höhere Zahlenwert bei schlechterem Inhalt ist der direkteste Beleg dieses Befundes:
+**Der Wert misst nicht, was er zu messen scheint.**
+
+### Folgerungen
+
+1. **Frage vor dem Einbetten kürzen** wäre ein billiger Gewinn — aber nicht pauschal:
+   bei „Wer ist verantwortlich für die Risikoanalyse?" trägt „wer ist verantwortlich"
+   Bedeutung. Gehört als Variante in die Eval-Suite (P4), nicht als Bauchentscheidung
+   in den Code.
+2. **Hybride Suche (BM25 daneben)** gewinnt an Gewicht: Bei `Verfügbarkeit` würde reine
+   Wortübereinstimmung die Stellen, die den Begriff enthalten, sofort nach oben ziehen —
+   genau die, die der Kosinus auf Platz 2 und 3 schiebt.
+3. **Die Reparatur aus Befund 6 hat gewirkt:** Die Stücke mit `Verfügbarkeit` erscheinen
+   überhaupt erst jetzt in den Trefferlisten. Vorher waren sie als `Verffgbarkeit` für
+   jede Anfrage unsichtbar.
+
+## Zweiter Befund aus demselben Lauf: die Frage passt nicht zum Korpus
+
+Keiner der drei Treffer **definiert** Schutzbedarf, sie erwähnen ihn nur. Nachgemessen:
+
+| Suche im Dokument | Vorkommen |
+|---|---|
+| „Schutzbedarf" | 21× |
+| „Schutzbedarfsfeststellung" | 3× |
+| Verweis auf „200-2" | 11× |
+
+**BSI 200-3 ist die Risikoanalyse.** Die Schutzbedarfsfeststellung wird in **BSI 200-2**
+beschrieben; 200-3 setzt sie voraus und verweist elfmal darauf. Die Definition steht also
+tatsächlich nicht im Korpus.
+
+`Das steht nicht im Dokument.` war hier **die richtige Antwort** — der umgekehrte Fall zu
+Befund 5, wo dieselbe Ausgabe ein Fehler war.
+
+## Abgrenzung zu Befund 5
+
+| | Befund 5 | Befund 7 |
+|---|---|---|
+| Frage | „was sind schutzmaßnahmen" | „Was ist ein Schutzbedarf?" |
+| Antwort im Kontext? | **ja, wörtlich** | **nein** |
+| Ausgabe | „Das steht nicht im Dokument." | „Das steht nicht im Dokument." |
+| Fehler sitzt in | Generierung (Modell zu klein) | Korpus (Thema fehlt) |
+
+**Dieselbe Ausgabe, zwei völlig verschiedene Ursachen.** Unterscheiden lassen sie sich nur,
+weil die drei Treffer mit angezeigt werden. Ohne dieses Diagnosefenster wäre Befund 7 als
+weiterer Modellfehler fehlgedeutet worden — und die Zeit ins falsche Problem geflossen.
+
+## Lösungswege
+
+1. **Reranker** — ein zweites Modell bewertet nur die besten 20 Treffer, diesmal auf die
+   Frage bezogen (Cross-Encoder). Erzeugt einen breiten, aussagekräftigen Wertebereich.
+   Der übliche Weg; kostet einen zweiten Modellaufruf.
+2. **Hybride Suche** — Kosinus mit BM25 (Wortübereinstimmung) kombinieren. Fängt genau die
+   Fälle, in denen der Fachbegriff wörtlich vorkommt.
+3. **Relativer statt absoluter Schwellenwert** — nur Treffer behalten, die nahe am besten
+   Treffer liegen. Billig, aber schwach: bei einer fremden Frage sind auch die schlechten
+   Treffer untereinander ähnlich.
+4. **Korpus erweitern** — BSI 200-2 aufnehmen, damit Fragen zur Schutzbedarfsfeststellung
+   überhaupt beantwortbar werden.
+
+## Entscheidung
+
+1. **Kein Schwellenwert im aktuellen Stand.** Die Zahlen tragen ihn nicht; ein erfundener
+   Grenzwert würde Qualität vortäuschen.
+2. **Reranking ist der nächste substanzielle Schritt** (Weg 1) — aber erst, nachdem die
+   Eval-Suite (P4) steht. Sonst ist die Verbesserung nicht messbar, sondern nur gefühlt.
+3. **BSI 200-2 kommt in den Korpus** (Weg 4), zusammen mit den übrigen geplanten Dokumenten.
+   Vorher dieselben Encoding-Messungen wie in Befund 2 und 6 durchführen.
+4. **Die Trefferanzeige bleibt dauerhaft im Code.** Sie ist kein Debug-Rest, sondern das
+   Werkzeug, das Korpus-, Such- und Modellfehler auseinanderhält.
+
+## Methodische Lehre
+
+Ein bestandener Test ist noch kein guter Test. Die Prüfung *„passende Frage schlägt fremde
+Frage"* war bestanden — und hätte allein als Bestätigung getaugt. Erst der Blick auf den
+**Abstand** statt nur auf die Reihenfolge zeigte, dass die Trennschärfe fehlt.
+
+**Nicht fragen, ob die Zahl in die richtige Richtung zeigt, sondern wie weit.**
+
+---
+
 # Offene Punkte
 
+- [ ] **Reranker einbauen** (Befund 7) — nach der Eval-Suite, damit die Wirkung messbar ist
+- [ ] **BSI 200-2 in den Korpus** (Befund 7) — enthält die Schutzbedarfsfeststellung, auf die
+      200-3 elfmal verweist; vorher Encoding-Messung wie in Befund 2 und 6
+- [ ] Prüfen, ob die 31 beschädigten `ff`-Stellen (Befund 6) auf bestimmten Seiten geballt
+      auftreten — dann wäre eine einzelne Font-Einbettung die Ursache
 - [ ] Stückgröße messen statt schätzen — sobald `Recall@k` aus der Eval-Suite (P4) vorliegt,
       Weg A gegen C und D antreten lassen
-- [ ] Weiche Trennstriche entfernen und die Stückzahl erneut messen
-- [ ] Prüfen, ob die verstümmelten Stellen auf bestimmten Seiten geballt auftreten (dann wäre
-      ein einzelner Font die Ursache und eine gezielte Behandlung doch lohnend)
+- [x] ~~Weiche Trennstriche entfernen und die Stückzahl erneut messen~~ — erledigt, 138 Stücke
 - [ ] **Seitenzahl je Stück zurückgewinnen** — beim Zusammenkleben die Startposition jeder
       Seite mitschreiben, damit zu jedem Stück eine Fundstelle genannt werden kann
       (Voraussetzung für die Zitatpflicht)
@@ -523,6 +820,8 @@ folgen kann.** Wird das übersehen, wirkt das System vorsichtig und ist in Wahrh
 ---
 
 # Methodische Lehre
+
+*(Diese Lehre stammt aus Befund 1 und 2; die späteren Befunde tragen ihre eigene am Ende.)*
 
 Beide Befunde kamen zustande, weil eine **Zahl auf Plausibilität geprüft** wurde statt
 akzeptiert: 55 Stücke bei 54 Seiten. Ohne diese Prüfung wäre die Pipeline mit
