@@ -425,6 +425,88 @@ Mit GPU läge die Zeit im Millisekundenbereich; auf dem Hetzner-Server (Track G)
 
 ---
 
+# Befund 5 — Das Generierungsmodell ist zu klein für den Guardrail
+
+## Symptom
+
+Frage *„was sind schutzmassnahmen"*. Das Retrieval lieferte **drei passende Treffer**
+(0.660 / 0.642 / 0.630) — alle drei über Angemessenheit, Prüfkriterien und ein konkretes
+Maßnahmenbeispiel. Die Antwort des Modells lautete trotzdem:
+
+```
+Das steht nicht im Dokument.
+```
+
+**Der Fehler saß nicht im Retrieval, sondern in der Generierung.**
+
+## Eingrenzung
+
+Drei Hypothesen, einzeln geprüft mit `qwen2.5:3b`, Temperatur 0:
+
+| # | Hypothese | Test | Ergebnis |
+|---|---|---|---|
+| 1 | Prompt zu streng formuliert | lockerere Fassung („auch Teilaspekte zählen") | **widerlegt** — identische Ablehnung |
+| 2 | Frage passt nicht zum Kontext | Frage gestellt, deren Antwort wörtlich im Kontext steht | **widerlegt** — ebenfalls abgelehnt |
+| 3 | Modell zu klein | siehe unten | **bestätigt** |
+
+## Der entscheidende Test
+
+Frage: *„Nenne ein Beispiel für eine ergänzende Maßnahme."*
+Im Kontext steht wörtlich: *„…wird ein Rollen- und Rechtekonzept umgesetzt und dokumentiert,
+das den Grundsätzen einer Funktionstrennung genügt."*
+
+```
+MIT Guardrail-Satz:    "Das steht nicht im Dokument."          <- Falsch-Negativ
+OHNE Guardrail-Satz:   "...koennte eine Verwaltungsstruktur     <- Halluzination
+                        sein, die eine klare Abgrenzung der
+                        Rollen ermoeglicht..."
+```
+
+`qwen2.5:3b` kennt nur zwei Zustände: **alles ablehnen** oder **frei erfinden**. Die Mitte —
+*nimm, was dasteht, und nur das* — trifft es nicht.
+
+## Gegenprobe mit größeren Modellen
+
+Identischer Prompt, identischer Kontext, über Groq:
+
+| Modell | Größe | Antwort |
+|---|---|---|
+| `qwen2.5:3b` (lokal) | 3 Mrd | „Das steht nicht im Dokument." |
+| `openai/gpt-oss-20b` | 20 Mrd | **korrekt, wörtlich aus dem Text** |
+| `openai/gpt-oss-120b` | 120 Mrd | **korrekt, wörtlich aus dem Text** |
+
+*(`qwen/qwen3.8-27b` lief in ein Groq-Ratenlimit — nicht getestet.)*
+
+**Die Fähigkeitsgrenze liegt zwischen 3 und 20 Milliarden Parametern.** Schon das kleinere
+Cloud-Modell löst die Aufgabe.
+
+## Einordnung
+
+Das ist der Kompromiss aus dem Guardrail-Lernblatt, an eigenen Daten gemessen:
+
+| | |
+|---|---|
+| **Guardrail an** bei zu kleinem Modell | hohe **Falsch-Negativ-Rate** — richtige Antworten werden verweigert |
+| **Guardrail aus** | Halluzination — das Modell geht über den Beleg hinaus |
+
+Ein Guardrail ist keine reine Prompt-Frage. **Er setzt ein Modell voraus, das der Anweisung
+folgen kann.** Wird das übersehen, wirkt das System vorsichtig und ist in Wahrheit unbrauchbar.
+
+## Entscheidung
+
+1. **Lokal bleibt `qwen2.5:3b`** für die Entwicklung — kostenlos, keine Daten verlassen den
+   Rechner.
+2. **Für Qualitätsmessungen** wird der Generierungsschritt gegen ein größeres Modell getestet.
+   Groq ist dafür gesetzt (Schlüssel vorhanden, kostenloses Kontingent).
+3. **Datenschutz-Vorbehalt:** BSI 200-3 ist öffentlich, der Cloud-Test daher unkritisch.
+   Sobald ein Korpus vertrauliche Kundendokumente enthält, ist der Cloud-Weg **gesperrt** —
+   dann entweder lokal mit größerem Modell (mehr RAM nötig) oder auf eigener Infrastruktur
+   (Hetzner, Track G). Das gehört ins Bedrohungsmodell.
+4. **In der Eval-Suite (P4)** wird Modellgröße gegen Antwortqualität systematisch gemessen —
+   dieser Befund ist die erste Datenreihe dafür.
+
+---
+
 # Offene Punkte
 
 - [ ] Stückgröße messen statt schätzen — sobald `Recall@k` aus der Eval-Suite (P4) vorliegt,
