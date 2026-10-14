@@ -1,6 +1,6 @@
 # Befunde zum Korpus — BSI-Standard 200-3
 
-**Stand: 08.09.2026** · Korpus: `standard_200_3.pdf` (54 Seiten, 110.732 Zeichen extrahiert)
+**Stand: 08.09.2026** · Korpus: `standard_200_3.pdf` (54 Seiten, 110.732 Zeichen extrahiert) --> viel Text
 
 Dieses Dokument hält fest, was beim ersten Blick in die Daten herauskam — **bevor** die
 Retrieval-Pipeline gebaut wurde. Jeder Befund steht mit Symptom, Messung, Ursache, Lösungswegen
