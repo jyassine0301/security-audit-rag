@@ -117,3 +117,5 @@ Teil eines Lernpfads Richtung AI Engineering. Der Anspruch ist nicht, ein Tutori
 nachzubauen, sondern jede Entscheidung an eigenen Messungen zu begründen — auch dort, wo
 die Messung die ursprüngliche Annahme widerlegt. Mehrere Befunde in
 [BEFUNDE.md](BEFUNDE.md) dokumentieren genau solche Fälle.
+
+Zuletzt geprüft: 23.09.2026
