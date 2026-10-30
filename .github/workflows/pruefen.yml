@@ -1,0 +1,16 @@
+name: Pruefen                          # Name, der auf GitHub im Reiter "Actions" erscheint
+
+on:                                    # WANN laeuft sie?
+  push:                                #   bei jedem Push, auf jeden Branch
+  pull_request:                        #   und bei jedem Pull Request
+
+jobs:
+  syntax:                              # ein Auftrag, frei benannt
+    runs-on: ubuntu-latest             # auf einem frischen Linux-Rechner von GitHub
+    steps:
+      - uses: actions/checkout@v4      # 1. dein Repo auf diesen Rechner laden
+      - uses: actions/setup-python@v5  # 2. Python installieren ...
+        with:
+          python-version: "3.15"       #    ... in derselben Version wie bei dir
+      - run: python -m py_compile suche.py   # 3. suche.py uebersetzen - nicht ausfuehren
+
